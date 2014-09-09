@@ -278,9 +278,11 @@ struct writer {
     void operator()(example::optional_field<T, N> const& val) const {
         if (!optv_)
             throw bad_message();
-        opts_.set();
-        *optv_ = static_cast<example::opt_fields::value_type>(opts_.to_ulong());
-        (*this)(*val);
+        if (val) {
+            opts_.set();
+            *optv_ = static_cast<example::opt_fields::value_type>(opts_.to_ulong());
+            (*this)(*val);
+        }
     }
 
     template<class T>
