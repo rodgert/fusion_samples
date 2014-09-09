@@ -18,6 +18,7 @@
 #include <boost/fusion/include/is_sequence.hpp>
 #include <boost/system/system_error.hpp>
 #include <boost/system/error_code.hpp>
+#include <boost/iterator/iterator_facade.hpp>
 
 #include <cstddef>
 #include <type_traits>
@@ -63,6 +64,22 @@ namespace example {
         T const& get() const { return *val_; }
 
         bool has_value() const { return val_; }
+        size_t buffer_size() const { return asio::buffer_size(buf_); }
+    };
+
+    template<class T>
+    struct lazy_const_iterator;
+
+    template<class T>
+    struct lazy_range {
+        uint16_t count_;
+        asio::const_buffer buf_;
+
+        lazy_range(uint16_t count = 0, asio::const_buffer = asio::const_buffer());
+
+        lazy_const_iterator<T> begin() const;
+        lazy_const_iterator<T> end() const;
+
         size_t buffer_size() const { return asio::buffer_size(buf_); }
     };
 }
@@ -177,6 +194,13 @@ struct reader {
     void operator()(example::lazy<T> & val) const {
         val = example::lazy<T>(buf_);
         buf_ = buf_ + val.buffer_size();
+    }
+
+    template<class T>
+    void operator()(example::lazy_range<T> & val) const {
+        uint16_t length;
+        (*this)(length);
+        val = example::lazy_range<T>(length, buf_);
     }
 };
 
@@ -398,6 +422,58 @@ namespace example {
             val_ = tmp;
         }
         return *val_;
+    }
+
+    template<class T>
+    struct lazy_const_iterator
+        : boost::iterator_facade<
+            lazy_const_iterator<T>
+          , T const
+          , boost::forward_traversal_tag> {
+        lazy_const_iterator(uint16_t count, asio::const_buffer buf)
+            : count_(count)
+            , buf_(buf)
+        { }
+
+    private:
+        friend class boost::iterator_core_access;
+
+        void increment() {
+            T v;
+            std::tie(v, buf_) = read<T>(buf_);
+            ++count_;
+        }
+
+        bool equal(lazy_const_iterator<T> const& other) const
+        {
+            return count_ == other.count_;
+        }
+
+        T const& dereference() const { return *val_; }
+
+        uint16_t count_;
+        asio::const_buffer buf_;
+        boost::optional<T> val_;
+    };
+
+    template<class T>
+    lazy_range<T>::lazy_range(uint16_t count, asio::const_buffer buf)
+        : count_(count)
+        , buf_(buf)
+    {
+        for (; count != 0; --count)
+            get_size<T>(buf_);
+        buf_ = asio::const_buffer(asio::buffer_cast<void const*>(buf), asio::buffer_size(buf) - asio::buffer_size(buf_));
+    }
+
+    template<class T>
+    lazy_const_iterator<T> lazy_range<T>::begin() const {
+        return lazy_const_iterator<T>(0, buf_);
+    }
+
+    template<class T>
+    lazy_const_iterator<T> lazy_range<T>::end() const {
+        return lazy_const_iterator<T>(count_, buf_ + buffer_size());
     }
 
     using magic_t = std::integral_constant<uint16_t, 0xf00d>;
