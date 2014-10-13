@@ -39,8 +39,9 @@ namespace example {
 
     template<typename T, size_t N>
     struct optional_field : boost::optional<T> {
-        using boost::optional<T>::optional;
         constexpr static const size_t bit = N;
+        optional_field() = default;
+        optional_field(T v) : boost::optional<T>(std::move(v)) { }
     };
 
     using opt_fields = optional_field_set<uint16_t>;
@@ -63,7 +64,7 @@ namespace example {
         T& get();
         T const& get() const { return *val_; }
 
-        bool has_value() const { return val_; }
+        bool has_value() const { return !!val_; }
         size_t buffer_size() const { return asio::buffer_size(buf_); }
     };
 
